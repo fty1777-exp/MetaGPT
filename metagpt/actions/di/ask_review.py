@@ -6,6 +6,12 @@ from metagpt.actions import Action
 from metagpt.logs import logger
 from metagpt.schema import Message, Plan
 
+from metagpt.utils.agent_logger import (
+    agent_logger,
+    TOOL_CALL,
+    TOOL_RETURN,
+)
+
 
 class ReviewConst:
     TASK_REVIEW_TRIGGER = "task"
@@ -28,6 +34,17 @@ class AskReview(Action):
     async def run(
         self, context: list[Message] = [], plan: Plan = None, trigger: str = ReviewConst.TASK_REVIEW_TRIGGER
     ) -> Tuple[str, bool]:
+        rid = agent_logger.current_request_id()
+        cid = agent_logger.allocate_call_id("Tool")
+        agent_logger.log(TOOL_CALL, rid, {
+            "call_id": cid,
+            "tool_name": "AskReview",
+            "tool_param": {
+                "context": context,
+                "plan": plan,
+                "trigger": trigger,
+            }
+        })
         if plan:
             logger.info("Current overall plan:")
             logger.info(
@@ -53,10 +70,18 @@ class AskReview(Action):
         rsp = input(prompt)
 
         if rsp.lower() in ReviewConst.EXIT_WORDS:
+            agent_logger.log(TOOL_RETURN, rid, {
+                "call_id": cid,
+                "tool_ret": "<EXITED>",
+            })
             exit()
 
         # Confirmation can be one of "confirm", "continue", "c", "yes", "y" exactly, or sentences containing "confirm".
         # One could say "confirm this task, but change the next task to ..."
         confirmed = rsp.lower() in ReviewConst.CONTINUE_WORDS or ReviewConst.CONTINUE_WORDS[0] in rsp.lower()
 
+        agent_logger.log(TOOL_RETURN, rid, {
+            "call_id": cid,
+            "tool_ret": (rsp, confirmed)
+        })
         return rsp, confirmed

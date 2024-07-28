@@ -6,6 +6,8 @@ from examples.di.requirements_prompt import OPEN_ENDED_TASKS_REQUIREMENTS
 from metagpt.const import DATA_PATH
 from metagpt.roles.di.data_interpreter import DataInterpreter
 from metagpt.tools.tool_recommend import TypeMatchToolRecommender
+from metagpt.utils.agent_logger import agent_logger
+import datetime
 
 
 # Ensure Open-Ended Tasks dataset has been downloaded before using this example.
@@ -15,6 +17,9 @@ async def main(task_name, data_dir=DATA_PATH, use_reflection=True):
 
     requirement = OPEN_ENDED_TASKS_REQUIREMENTS[task_name].format(data_dir=data_dir)
     di = DataInterpreter(use_reflection=use_reflection, tool_recommender=TypeMatchToolRecommender(tools=["<all>"]))
+    now = datetime.datetime.now().isoformat().replace(':', '')
+    agent_logger.set_log_file(f"./{now}-open_ended_tasks-{task_name}.log")
+    agent_logger.allocate_request_id()
     await di.run(requirement)
 
 

@@ -40,6 +40,15 @@ from metagpt.utils.token_counter import (
     get_openrouter_tokens,
 )
 
+from metagpt.utils.agent_logger import (
+    stringify_input_messages,
+    agent_logger,
+    LLM_CALL,
+    LLM_DECODING,
+    LLM_RETURN,
+)
+from pydantic import BaseModel
+
 
 @register_provider(
     [
@@ -87,6 +96,20 @@ class OpenAILLM(BaseLLM):
         return params
 
     async def _achat_completion_stream(self, messages: list[dict], timeout=USE_CONFIG_TIMEOUT) -> str:
+        rid = agent_logger.current_request_id()
+        cid = agent_logger.allocate_call_id("LLM")
+        input_ntokens = count_input_tokens(messages, self.pricing_plan)
+        input_str = stringify_input_messages(messages, self.pricing_plan)
+        agent_logger.log(
+            LLM_CALL,
+            rid,
+            {
+                "call_id": cid,
+                "input": input_str,
+                "input_ntokens": input_ntokens,
+            },
+        )
+        first_token_appeared = False
         response: AsyncStream[ChatCompletionChunk] = await self.aclient.chat.completions.create(
             **self._cons_kwargs(messages, timeout=self.get_timeout(timeout)), stream=True
         )
@@ -98,6 +121,18 @@ class OpenAILLM(BaseLLM):
                 chunk.choices[0].finish_reason if chunk.choices and hasattr(chunk.choices[0], "finish_reason") else None
             )
             log_llm_stream(chunk_message)
+
+            if not first_token_appeared and chunk_message:
+                first_token_appeared = True
+                agent_logger.log(
+                    LLM_DECODING,
+                    rid,
+                    {
+                        "call_id": cid,
+                        "output": chunk_message[0],
+                    },
+                )
+
             collected_messages.append(chunk_message)
             if finish_reason:
                 if hasattr(chunk, "usage") and chunk.usage is not None:
@@ -120,6 +155,17 @@ class OpenAILLM(BaseLLM):
             usage = self._calc_usage(messages, full_reply_content)
 
         self._update_costs(usage)
+        output_ntokens = usage.completion_tokens
+        agent_logger.log(
+            LLM_RETURN,
+            rid,
+            {
+                "call_id": cid,
+                "output": full_reply_content,
+                "output_ntokens": output_ntokens,
+                "total_ntokens": input_ntokens + output_ntokens,
+            },
+        )
         return full_reply_content
 
     def _cons_kwargs(self, messages: list[dict], timeout=USE_CONFIG_TIMEOUT, **extra_kwargs) -> dict:
@@ -138,8 +184,33 @@ class OpenAILLM(BaseLLM):
 
     async def _achat_completion(self, messages: list[dict], timeout=USE_CONFIG_TIMEOUT) -> ChatCompletion:
         kwargs = self._cons_kwargs(messages, timeout=self.get_timeout(timeout))
+        rid = agent_logger.current_request_id()
+        cid = agent_logger.allocate_call_id("LLM")
+        input_ntokens = count_input_tokens(messages, self.pricing_plan)
+        input_str = stringify_input_messages(messages, self.pricing_plan)
+        agent_logger.log(
+            LLM_CALL,
+            rid,
+            {
+                "call_id": cid,
+                "input": input_str,
+                "input_ntokens": input_ntokens,
+            },
+        )
         rsp: ChatCompletion = await self.aclient.chat.completions.create(**kwargs)
         self._update_costs(rsp.usage)
+        usage = rsp.usage.model_dump() if isinstance(rsp.usage, BaseModel) else rsp.usage
+        output_ntokens = int(usage.get("completion_tokens", 0))
+        agent_logger.log(
+            LLM_RETURN,
+            rid,
+            {
+                "call_id": cid,
+                "output": self.get_choice_text(rsp),
+                "output_ntokens": output_ntokens,
+                "total_ntokens": input_ntokens + output_ntokens,
+            },
+        )
         return rsp
 
     async def acompletion(self, messages: list[dict], timeout=USE_CONFIG_TIMEOUT) -> ChatCompletion:

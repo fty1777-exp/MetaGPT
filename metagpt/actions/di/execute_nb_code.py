@@ -26,6 +26,11 @@ from rich.syntax import Syntax
 from metagpt.actions import Action
 from metagpt.logs import logger
 
+from metagpt.utils.agent_logger import (
+    agent_logger,
+    TOOL_CALL,
+    TOOL_RETURN,
+)
 
 class ExecuteNbCode(Action):
     """execute notebook code block, return result to llm, and display it."""
@@ -191,6 +196,16 @@ class ExecuteNbCode(Action):
         """
         return the output of code execution, and a success indicator (bool) of code execution.
         """
+        rid = agent_logger.current_request_id()
+        cid = agent_logger.allocate_call_id("Tool")
+        agent_logger.log(TOOL_CALL, rid, {
+            "call_id": cid,
+            "tool_name": "ExecuteNbCode",
+            "tool_param": {
+                "code": code,
+                "language": language,
+            }
+        })
         self._display(code, language)
 
         if language == "python":
@@ -207,14 +222,26 @@ class ExecuteNbCode(Action):
             if "!pip" in code:
                 success = False
 
+            agent_logger.log(TOOL_RETURN, rid, {
+                "call_id": cid,
+                "tool_ret": (outputs, success)
+            })
             return outputs, success
 
         elif language == "markdown":
             # add markdown content to markdown cell in a notebook.
             self.add_markdown_cell(code)
             # return True, beacuse there is no execution failure for markdown cell.
+            agent_logger.log(TOOL_RETURN, rid, {
+                "call_id": cid,
+                "tool_ret": (code, True)
+            })
             return code, True
         else:
+            agent_logger.log(TOOL_RETURN, rid, {
+                "call_id": cid,
+                "tool_ret": "<ValueError>"
+            })
             raise ValueError(f"Only support for language: python, markdown, but got {language}, ")
 
 

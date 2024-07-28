@@ -347,6 +347,7 @@ def count_input_tokens(messages, model="gpt-3.5-turbo-0125"):
         "gpt-4-turbo",
         "gpt-4-vision-preview",
         "gpt-4-1106-vision-preview",
+        "gpt-4-1106-preview",
         "gpt-4o-2024-05-13",
         "gpt-4o",
     }:

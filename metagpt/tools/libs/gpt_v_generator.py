@@ -42,7 +42,7 @@ class GPTvGenerator:
         from metagpt.llm import LLM
 
         self.llm = LLM(llm_config=config.get_openai_llm())
-        self.llm.model = "gpt-4-vision-preview"
+        self.llm.model = "gpt-4o"
 
     async def analyze_layout(self, image_path: Path) -> str:
         """Asynchronously analyze the layout of the given image and return the result.
